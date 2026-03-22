@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import Image from "next/image";
 
 type GenerationMode = {
   key:
@@ -40,12 +41,40 @@ export default function StudioPage() {
   const [lighting, setLighting] = useState("studio soft");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [response, setResponse] = useState<string>("");
+  const [currentJob, setCurrentJob] = useState<any>(null);
 
   const currentMode = useMemo(() => MODES.find((m) => m.key === mode)!, [mode]);
+
+  // Polling for job updates
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (currentJob && (currentJob.status === "queued" || currentJob.status === "running")) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/generations/${currentJob.id}`);
+          const json = await res.json();
+          if (res.ok && json.data) {
+            setCurrentJob(json.data);
+            if (json.data.status === "completed" || json.data.status === "failed") {
+              setResponse(`Job ${json.data.status}!`);
+            }
+          }
+        } catch (err) {
+          console.error("Polling error", err);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentJob]);
 
   const submitJob = async () => {
     setIsSubmitting(true);
     setResponse("");
+    setCurrentJob(null);
 
     try {
       const res = await fetch("/api/generations", {
@@ -65,7 +94,8 @@ export default function StudioPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to queue generation job");
 
-      setResponse(`Queued job: ${json.data.id}`);
+      setResponse(`Started job: ${json.data.id}`);
+      setCurrentJob(json.data);
     } catch (error) {
       setResponse(error instanceof Error ? error.message : "Unknown error");
     } finally {
@@ -128,13 +158,35 @@ export default function StudioPage() {
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h2 className="text-lg font-semibold">Output Grid (Day 3 scaffold)</h2>
-        <p className="mb-4 text-sm text-zinc-600">This will show generated outputs starting Day 4.</p>
+        <h2 className="text-lg font-semibold">Output Grid (Day 4)</h2>
+        <p className="mb-4 text-sm text-zinc-600">
+          {currentJob
+            ? `Status: ${currentJob.status} | Outputs: ${currentJob.outputs?.length || 0}/${currentJob.batchSize}`
+            : "Submit a job to see generation progress."}
+        </p>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, idx) => (
-            <div key={idx} className="aspect-square rounded-lg border border-dashed border-zinc-300 bg-zinc-50" />
-          ))}
+          {currentJob && currentJob.outputs && currentJob.outputs.length > 0 ? (
+            currentJob.outputs.map((out: any) => (
+              <div key={out.id} className="relative aspect-square overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 group">
+                <Image src={out.filePath} alt="Generated output" fill className="object-cover" />
+                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+                <div className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md opacity-0 transition-opacity group-hover:opacity-100">
+                  {out.approvalState}
+                </div>
+              </div>
+            ))
+          ) : currentJob && (currentJob.status === "queued" || currentJob.status === "running") ? (
+            Array.from({ length: currentJob.batchSize || batchSize }).map((_, idx) => (
+              <div key={idx} className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
+              </div>
+            ))
+          ) : (
+            Array.from({ length: 8 }).map((_, idx) => (
+              <div key={idx} className="aspect-square rounded-lg border border-dashed border-zinc-200 bg-zinc-50/50" />
+            ))
+          )}
         </div>
       </section>
 

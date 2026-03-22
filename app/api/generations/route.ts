@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { runGenerationPipeline } from "@/lib/generation-pipeline";
 
 type CreateGenerationBody = {
   brandId?: string;
@@ -71,10 +72,13 @@ export async function POST(request: Request) {
     },
   });
 
+  // Kick off background generation (local-first mock execution)
+  runGenerationPipeline(job.id).catch(console.error);
+
   return NextResponse.json(
     {
       data: job,
-      note: "Generation execution worker is not wired yet (Day 4). Job queued only.",
+      note: "Generation execution started.",
     },
     { status: 201 },
   );
