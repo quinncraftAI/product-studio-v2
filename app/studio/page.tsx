@@ -42,6 +42,9 @@ export default function StudioPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [response, setResponse] = useState<string>("");
   const [currentJob, setCurrentJob] = useState<any>(null);
+  const [regenOutputId, setRegenOutputId] = useState<string | null>(null);
+  const [regenInstruction, setRegenInstruction] = useState("");
+  const [isRegenerating, setIsRegenerating] = useState<Record<string, boolean>>({});
 
   const currentMode = useMemo(() => MODES.find((m) => m.key === mode)!, [mode]);
 
@@ -106,6 +109,37 @@ export default function StudioPage() {
         handleApproval(out.id, "rejected");
       }
     });
+  };
+
+  const submitRegenerate = async (outputId: string) => {
+    if (!regenInstruction.trim()) return;
+    setIsRegenerating((prev) => ({ ...prev, [outputId]: true }));
+    setRegenOutputId(null);
+    
+    try {
+      const res = await fetch(`/api/outputs/${outputId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructionText: regenInstruction }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      
+      // Add the new child output to the local state so UI updates
+      setCurrentJob((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          outputs: [json.data, ...prev.outputs], // prepend to show up as newest
+        };
+      });
+      
+    } catch (err) {
+      console.error("Regeneration failed", err);
+    } finally {
+      setIsRegenerating((prev) => ({ ...prev, [outputId]: false }));
+      setRegenInstruction("");
+    }
   };
 
   const submitJob = async () => {
@@ -225,46 +259,101 @@ export default function StudioPage() {
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {currentJob && currentJob.outputs && currentJob.outputs.length > 0 ? (
-            currentJob.outputs.map((out: any) => (
-              <div 
-                key={out.id} 
-                className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-zinc-100 group transition-all
-                  ${out.approvalState === "approved" ? "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]" : 
-                    out.approvalState === "rejected" ? "border-red-500 opacity-50 grayscale" : "border-zinc-200"}`
-                }
-              >
-                <Image src={out.filePath} alt="Generated output" fill className="object-cover" />
-                
-                <div className={`absolute inset-0 flex flex-col justify-between p-2 transition-all 
-                  ${out.approvalState === "pending" ? "bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100" : "bg-black/10 opacity-100"}`}
+            (() => {
+              // Group outputs by parent to only show leaf nodes
+              const parentIds = new Set(currentJob.outputs.map((o: any) => o.parentOutputId).filter(Boolean));
+              const leafOutputs = currentJob.outputs.filter((o: any) => !parentIds.has(o.id));
+              
+              return leafOutputs.map((out: any) => (
+                <div 
+                  key={out.id} 
+                  className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-zinc-100 group transition-all
+                    ${out.approvalState === "approved" ? "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]" : 
+                      out.approvalState === "rejected" ? "border-red-500 opacity-50 grayscale" : "border-zinc-200"}`
+                  }
                 >
-                  <div className="flex justify-end gap-1.5">
-                    <button 
-                      onClick={() => handleApproval(out.id, out.approvalState === "approved" ? "pending" : "approved")}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
-                        ${out.approvalState === "approved" ? "bg-emerald-500" : "bg-black/50 hover:bg-emerald-500"}`}
-                      title={out.approvalState === "approved" ? "Undo Approval" : "Approve"}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    </button>
-                    <button 
-                      onClick={() => handleApproval(out.id, out.approvalState === "rejected" ? "pending" : "rejected")}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
-                        ${out.approvalState === "rejected" ? "bg-red-500" : "bg-black/50 hover:bg-red-500"}`}
-                      title={out.approvalState === "rejected" ? "Undo Rejection" : "Reject"}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
-                  </div>
+                  <Image src={out.filePath} alt={`Generated output v${out.versionNo}`} fill className="object-cover" />
                   
-                  <div className="flex">
-                    <div className="rounded bg-black/70 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur-md">
-                      {out.approvalState}
+                  {/* Hover Overlay */}
+                  <div className={`absolute inset-0 flex flex-col justify-between p-2 transition-all z-10
+                    ${out.approvalState === "pending" && regenOutputId !== out.id ? "bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100" : "bg-black/10 opacity-100"}`}
+                  >
+                    {/* Top Right Controls (Approve/Reject) */}
+                    <div className="flex justify-end gap-1.5">
+                      {regenOutputId !== out.id && !isRegenerating[out.id] && (
+                        <>
+                          <button 
+                            onClick={() => handleApproval(out.id, out.approvalState === "approved" ? "pending" : "approved")}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
+                              ${out.approvalState === "approved" ? "bg-emerald-500" : "bg-black/50 hover:bg-emerald-500"}`}
+                            title={out.approvalState === "approved" ? "Undo Approval" : "Approve"}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                          </button>
+                          <button 
+                            onClick={() => handleApproval(out.id, out.approvalState === "rejected" ? "pending" : "rejected")}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
+                              ${out.approvalState === "rejected" ? "bg-red-500" : "bg-black/50 hover:bg-red-500"}`}
+                            title={out.approvalState === "rejected" ? "Undo Rejection" : "Reject"}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    
+                    {/* Bottom Status / Regeneration UI */}
+                    <div className="flex flex-col gap-2">
+                      {isRegenerating[out.id] ? (
+                        <div className="flex items-center gap-2 rounded bg-black/70 p-2 backdrop-blur-md">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                          <span className="text-xs text-white">Regenerating...</span>
+                        </div>
+                      ) : regenOutputId === out.id ? (
+                        <div className="flex flex-col gap-2 rounded bg-black/70 p-2 backdrop-blur-md" onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            autoFocus
+                            placeholder="Instruction (e.g. 'Make it darker')" 
+                            className="w-full rounded border-0 bg-white/20 px-2 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-1 focus:ring-white"
+                            value={regenInstruction}
+                            onChange={(e) => setRegenInstruction(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") submitRegenerate(out.id);
+                              if (e.key === "Escape") setRegenOutputId(null);
+                            }}
+                          />
+                          <div className="flex gap-2">
+                            <button onClick={() => submitRegenerate(out.id)} className="flex-1 rounded bg-white px-2 py-1 text-[10px] font-bold text-black hover:bg-zinc-200">Go</button>
+                            <button onClick={() => setRegenOutputId(null)} className="flex-1 rounded bg-black/50 px-2 py-1 text-[10px] font-bold text-white hover:bg-black/70">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="rounded bg-black/70 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur-md">
+                            {out.approvalState}
+                          </div>
+                          {out.versionNo > 1 && (
+                            <div className="rounded bg-indigo-500/80 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur-md">
+                              v{out.versionNo}
+                            </div>
+                          )}
+                          <button 
+                            onClick={() => {
+                              setRegenOutputId(out.id);
+                              setRegenInstruction("");
+                            }}
+                            className="ml-auto flex items-center justify-center rounded bg-blue-500/90 px-2 py-1 text-[10px] font-bold text-white hover:bg-blue-400"
+                            title="Regenerate with instructions"
+                          >
+                            Regenerate
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))
+              ));
+            })()
           ) : currentJob && (currentJob.status === "queued" || currentJob.status === "running") ? (
             Array.from({ length: currentJob.batchSize || batchSize }).map((_, idx) => (
               <div key={idx} className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50">
