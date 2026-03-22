@@ -71,6 +71,43 @@ export default function StudioPage() {
     };
   }, [currentJob]);
 
+  const handleApproval = async (outputId: string, newState: "approved" | "rejected" | "pending") => {
+    // Optimistic update
+    setCurrentJob((prev: any) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        outputs: prev.outputs.map((out: any) => 
+          out.id === outputId ? { ...out, approvalState: newState } : out
+        ),
+      };
+    });
+
+    try {
+      await fetch(`/api/outputs/${outputId}/${newState}`, { method: "POST" });
+    } catch (err) {
+      console.error("Approval state update failed", err);
+    }
+  };
+
+  const handleBulkApprove = () => {
+    if (!currentJob?.outputs) return;
+    currentJob.outputs.forEach((out: any) => {
+      if (out.approvalState !== "approved") {
+        handleApproval(out.id, "approved");
+      }
+    });
+  };
+
+  const handleBulkReject = () => {
+    if (!currentJob?.outputs) return;
+    currentJob.outputs.forEach((out: any) => {
+      if (out.approvalState !== "rejected") {
+        handleApproval(out.id, "rejected");
+      }
+    });
+  };
+
   const submitJob = async () => {
     setIsSubmitting(true);
     setResponse("");
@@ -158,21 +195,73 @@ export default function StudioPage() {
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h2 className="text-lg font-semibold">Output Grid (Day 4)</h2>
-        <p className="mb-4 text-sm text-zinc-600">
-          {currentJob
-            ? `Status: ${currentJob.status} | Outputs: ${currentJob.outputs?.length || 0}/${currentJob.batchSize}`
-            : "Submit a job to see generation progress."}
-        </p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">Review Board (Day 5)</h2>
+            <p className="text-sm text-zinc-600">
+              {currentJob
+                ? `Status: ${currentJob.status} | Outputs: ${currentJob.outputs?.length || 0}/${currentJob.batchSize}`
+                : "Submit a job to see generation progress."}
+            </p>
+          </div>
+          
+          {currentJob && currentJob.status === "completed" && (
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleBulkApprove}
+                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              >
+                Approve All
+              </button>
+              <button 
+                onClick={handleBulkReject}
+                className="rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+              >
+                Reject All
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {currentJob && currentJob.outputs && currentJob.outputs.length > 0 ? (
             currentJob.outputs.map((out: any) => (
-              <div key={out.id} className="relative aspect-square overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 group">
+              <div 
+                key={out.id} 
+                className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-zinc-100 group transition-all
+                  ${out.approvalState === "approved" ? "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]" : 
+                    out.approvalState === "rejected" ? "border-red-500 opacity-50 grayscale" : "border-zinc-200"}`
+                }
+              >
                 <Image src={out.filePath} alt="Generated output" fill className="object-cover" />
-                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
-                <div className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md opacity-0 transition-opacity group-hover:opacity-100">
-                  {out.approvalState}
+                
+                <div className={`absolute inset-0 flex flex-col justify-between p-2 transition-all 
+                  ${out.approvalState === "pending" ? "bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100" : "bg-black/10 opacity-100"}`}
+                >
+                  <div className="flex justify-end gap-1.5">
+                    <button 
+                      onClick={() => handleApproval(out.id, out.approvalState === "approved" ? "pending" : "approved")}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
+                        ${out.approvalState === "approved" ? "bg-emerald-500" : "bg-black/50 hover:bg-emerald-500"}`}
+                      title={out.approvalState === "approved" ? "Undo Approval" : "Approve"}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </button>
+                    <button 
+                      onClick={() => handleApproval(out.id, out.approvalState === "rejected" ? "pending" : "rejected")}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-white backdrop-blur-md transition-colors
+                        ${out.approvalState === "rejected" ? "bg-red-500" : "bg-black/50 hover:bg-red-500"}`}
+                      title={out.approvalState === "rejected" ? "Undo Rejection" : "Reject"}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </div>
+                  
+                  <div className="flex">
+                    <div className="rounded bg-black/70 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur-md">
+                      {out.approvalState}
+                    </div>
+                  </div>
                 </div>
               </div>
             ))
