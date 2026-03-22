@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum GenerationMode {
+  white_bg_ecommerce
+  flatlay
+  lifestyle_indian
+  lifestyle_international
+  stylised_product
+  social_post
+  performance_creative
+  custom_prompt
+}
+
+enum JobStatus {
+  queued
+  running
+  completed
+  failed
+  partial
+}
+
+enum ApprovalState {
+  pending
+  approved
+  rejected
+}
+
+model Brand {
+  id                  String         @id @default(cuid())
+  name                String
+  slug                String         @unique
+  brandGuidelinesJson String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  products            Product[]
+  campaigns           Campaign[]
+  generationJobs      GenerationJob[]
+}
+
+model Product {
+  id              String         @id @default(cuid())
+  brandId         String
+  name            String
+  sku             String?
+  constraintsJson String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  brand           Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  campaigns       Campaign[]
+  generationJobs  GenerationJob[]
+
+  @@index([brandId])
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  brandId      String
+  productId    String?
+  name         String
+  objective    String?
+  channelsJson String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  brand        Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  product      Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  jobs         GenerationJob[]
+
+  @@index([brandId])
+  @@index([productId])
+}
+
+model GenerationJob {
+  id             String           @id @default(cuid())
+  brandId        String
+  productId      String
+  campaignId     String?
+  mode           GenerationMode
+  promptRaw      String?
+  promptEnhanced String?
+  paramsJson     String?
+  batchSize      Int              @default(1)
+  status         JobStatus        @default(queued)
+  errorText      String?
+  createdAt      DateTime         @default(now())
+  completedAt    DateTime?
+  brand          Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  product        Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  campaign       Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  outputs        GenerationOutput[]
+
+  @@index([createdAt])
+  @@index([brandId, productId, mode])
+}
+
+model GenerationOutput {
+  id             String            @id @default(cuid())
+  generationJobId String
+  parentOutputId String?
+  versionNo      Int               @default(1)
+  filePath       String
+  thumbPath      String?
+  width          Int?
+  height         Int?
+  mimeType       String            @default("image/jpeg")
+  metadataJson   String?
+  approvalState  ApprovalState     @default(pending)
+  createdAt      DateTime          @default(now())
+  generationJob  GenerationJob     @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+  parentOutput   GenerationOutput? @relation("OutputVersionChain", fields: [parentOutputId], references: [id], onDelete: SetNull)
+  childVersions  GenerationOutput[] @relation("OutputVersionChain")
+
+  @@index([generationJobId, approvalState])
+  @@index([parentOutputId])
+}
