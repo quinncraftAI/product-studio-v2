@@ -1,25 +1,25 @@
 import { prisma } from "./prisma";
 import fs from "fs/promises";
 import path from "path";
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function generateAndSaveImage(prompt: string, dir: string, assetId: string): Promise<{ fileName: string; width: number; height: number }> {
-  const response = await openai.images.generate({
-    model: "dall-e-3",
-    prompt,
-    n: 1,
-    size: "1024x1024",
-    response_format: "url",
-  });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { sampleCount: 1, aspectRatio: "1:1", outputOptions: { mimeType: "image/jpeg" } },
+      }),
+    }
+  );
 
-  const imageUrl = response.data[0].url!;
-  const imgRes = await fetch(imageUrl);
-  const arrayBuffer = await imgRes.arrayBuffer();
+  const json = await response.json();
+  const base64 = json.predictions[0].bytesBase64Encoded;
 
-  const fileName = `${assetId}.png`;
-  await fs.writeFile(path.join(dir, fileName), Buffer.from(arrayBuffer));
+  const fileName = `${assetId}.jpg`;
+  await fs.writeFile(path.join(dir, fileName), Buffer.from(base64, "base64"));
 
   return { fileName, width: 1024, height: 1024 };
 }
@@ -52,7 +52,7 @@ export async function runGenerationPipeline(jobId: string) {
         thumbPath: publicUrl,
         width,
         height,
-        mimeType: "image/png",
+        mimeType: "image/jpeg",
         approvalState: "pending",
       });
     }
@@ -101,7 +101,7 @@ export async function runRegenerationPipeline(parentOutputId: string, instructio
         thumbPath: publicUrl,
         width,
         height,
-        mimeType: "image/png",
+        mimeType: "image/jpeg",
         approvalState: "pending",
         metadataJson: JSON.stringify({ instruction: instructionText }),
       },
