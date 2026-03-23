@@ -7,9 +7,9 @@ export default function Home() {
         <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">
           Product Studio v1
         </p>
-        <h1 className="text-4xl font-semibold tracking-tight">Day 3 Build in Progress</h1>
+        <h1 className="text-4xl font-semibold tracking-tight">v1 Release Candidate</h1>
         <p className="max-w-2xl text-zinc-600">
-          Generation Studio scaffold is live with mode presets, prompt controls, and queue endpoint.
+          Full generation pipeline live: studio, history, prompt enhancement, image generation, and library export.
         </p>
       </div>
 
@@ -22,6 +22,9 @@ export default function Home() {
         </Link>
         <Link href="/history" className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium">
           Generation History
+        </Link>
+        <Link href="/library" className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium">
+          Library
         </Link>
       </div>
     </main>
