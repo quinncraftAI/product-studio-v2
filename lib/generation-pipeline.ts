@@ -2,6 +2,43 @@ import { prisma } from "./prisma";
 import fs from "fs/promises";
 import path from "path";
 
+export async function enhancePrompt(
+  rawPrompt: string,
+  params: { lighting?: string; mode?: string; product?: string; brand?: string }
+): Promise<string> {
+  const contextParts = [
+    params.mode && `Mode: ${params.mode}`,
+    params.product && `Product: ${params.product}`,
+    params.brand && `Brand: ${params.brand}`,
+    params.lighting && `Lighting: ${params.lighting}`,
+  ].filter(Boolean).join(", ");
+
+  const systemInstruction = `You are an expert image generation prompt engineer. Given a raw prompt and context, output exactly 2 sentences that form a highly optimized, vivid image generation prompt. Be specific about composition, lighting, style, and quality. Output only the 2-sentence prompt, nothing else.`;
+
+  const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
+      }),
+    }
+  );
+
+  const json = await response.json();
+  if (!response.ok || !json.candidates?.[0]?.content?.parts?.[0]?.text) {
+    console.error("Gemini enhance error:", JSON.stringify(json, null, 2));
+    return rawPrompt;
+  }
+
+  return json.candidates[0].content.parts[0].text.trim();
+}
+
 async function generateAndSaveImage(prompt: string, dir: string, assetId: string): Promise<{ fileName: string; width: number; height: number }> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:predict?key=${process.env.GEMINI_API_KEY}`,
@@ -42,7 +79,22 @@ export async function runGenerationPipeline(jobId: string) {
 
     const batchSize = job.batchSize;
     const outputs = [];
-    const prompt = job.promptRaw || `Generate a professional ${job.mode} image for brand ${job.brandId}`;
+    const rawPrompt = job.promptRaw || `Generate a professional ${job.mode} image for brand ${job.brandId}`;
+
+    const params = job.paramsJson ? JSON.parse(job.paramsJson as string) : {};
+    let prompt = rawPrompt;
+    if (params.useEnhancer) {
+      prompt = await enhancePrompt(rawPrompt, {
+        lighting: params.lighting,
+        mode: job.mode,
+        product: job.productId,
+        brand: job.brandId,
+      });
+      await prisma.generationJob.update({
+        where: { id: jobId },
+        data: { promptEnhanced: prompt },
+      });
+    }
 
     for (let i = 0; i < batchSize; i++) {
       const assetId = Math.random().toString(36).substring(2, 9);
