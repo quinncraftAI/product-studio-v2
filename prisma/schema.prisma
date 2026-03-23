@@ -49,6 +49,7 @@ model Product {
   brandId         String
   name            String
   sku             String?
+  imageUrl        String?
   constraintsJson String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -84,9 +85,10 @@ model GenerationJob {
   mode           GenerationMode
   promptRaw      String?
   promptEnhanced String?
-  paramsJson     String?
-  batchSize      Int              @default(1)
-  status         JobStatus        @default(queued)
+  paramsJson        String?
+  referenceImageUrl String?
+  batchSize         Int              @default(1)
+  status            JobStatus        @default(queued)
   errorText      String?
   createdAt      DateTime         @default(now())
   completedAt    DateTime?

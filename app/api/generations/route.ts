@@ -17,6 +17,7 @@ type CreateGenerationBody = {
     | "custom_prompt";
   promptRaw?: string;
   batchSize?: number;
+  referenceImageUrl?: string;
   params?: Record<string, unknown>;
 };
 
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
         mode,
         promptRaw: body.promptRaw?.trim() || null,
         paramsJson: body.params ? JSON.stringify(body.params) : null,
+        referenceImageUrl: body.referenceImageUrl?.trim() || null,
         batchSize: Number.isFinite(body.batchSize) ? Math.max(1, Number(body.batchSize)) : 4,
         status: "queued",
       },

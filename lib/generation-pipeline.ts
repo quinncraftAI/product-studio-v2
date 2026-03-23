@@ -3,13 +3,14 @@ import { saveImage } from "./storage";
 
 export async function enhancePrompt(
   rawPrompt: string,
-  params: { lighting?: string; mode?: string; product?: string; brand?: string }
+  params: { lighting?: string; mode?: string; product?: string; brand?: string; referenceImageUrl?: string | null }
 ): Promise<string> {
   const contextParts = [
     params.mode && `Mode: ${params.mode}`,
     params.product && `Product: ${params.product}`,
     params.brand && `Brand: ${params.brand}`,
     params.lighting && `Lighting: ${params.lighting}`,
+    params.referenceImageUrl && `Reference product image: ${params.referenceImageUrl}`,
   ].filter(Boolean).join(", ");
 
   const systemInstruction = `You are an expert image generation prompt engineer. Given a raw prompt and context, output exactly 2 sentences that form a highly optimized, vivid image generation prompt. Be specific about composition, lighting, style, and quality. Output only the 2-sentence prompt, nothing else.`;
@@ -92,11 +93,14 @@ export async function runGenerationPipeline(jobId: string) {
         mode: job.mode,
         product: job.productId,
         brand: job.brandId,
+        referenceImageUrl: job.referenceImageUrl,
       });
       await prisma.generationJob.update({
         where: { id: jobId },
         data: { promptEnhanced: prompt },
       });
+    } else if (job.referenceImageUrl) {
+      prompt = `${prompt}. Reference product image: ${job.referenceImageUrl}`;
     }
 
     for (let i = 0; i < batchSize; i++) {

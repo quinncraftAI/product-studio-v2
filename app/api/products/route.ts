@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   const brandId = String(body?.brandId ?? "").trim();
   const name = String(body?.name ?? "").trim();
   const sku = body?.sku ? String(body.sku).trim() : null;
+  const imageUrl = body?.imageUrl ? String(body.imageUrl).trim() : null;
   const constraintsJson = body?.constraintsJson
     ? JSON.stringify(body.constraintsJson)
     : null;
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
       brandId,
       name,
       sku,
+      imageUrl,
       constraintsJson,
     },
   });
