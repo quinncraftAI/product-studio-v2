@@ -1,6 +1,5 @@
 import { prisma } from "./prisma";
-import fs from "fs/promises";
-import path from "path";
+import { saveImage } from "./storage";
 
 export async function enhancePrompt(
   rawPrompt: string,
@@ -39,7 +38,11 @@ export async function enhancePrompt(
   return json.candidates[0].content.parts[0].text.trim();
 }
 
-async function generateAndSaveImage(prompt: string, dir: string, assetId: string): Promise<{ fileName: string; width: number; height: number }> {
+async function generateAndSaveImage(
+  prompt: string,
+  keyPrefix: string[],
+  assetId: string
+): Promise<{ publicUrl: string; width: number; height: number }> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:predict?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -53,18 +56,18 @@ async function generateAndSaveImage(prompt: string, dir: string, assetId: string
   );
 
   const json = await response.json();
-  
+
   if (!response.ok || !json.predictions || !json.predictions[0]) {
     console.error("Imagen API Error:", JSON.stringify(json, null, 2));
     throw new Error(json.error?.message || "Failed to generate image from Imagen API");
   }
 
   const base64 = json.predictions[0].bytesBase64Encoded;
-
   const fileName = `${assetId}.png`;
-  await fs.writeFile(path.join(dir, fileName), Buffer.from(base64, "base64"));
 
-  return { fileName, width: 1024, height: 1024 };
+  const { url } = await saveImage(Buffer.from(base64, "base64"), [...keyPrefix, fileName]);
+
+  return { publicUrl: url, width: 1024, height: 1024 };
 }
 
 export async function runGenerationPipeline(jobId: string) {
@@ -98,11 +101,9 @@ export async function runGenerationPipeline(jobId: string) {
 
     for (let i = 0; i < batchSize; i++) {
       const assetId = Math.random().toString(36).substring(2, 9);
-      const dir = path.join(process.cwd(), "public", "storage", job.brandId, job.productId, job.id);
-      await fs.mkdir(dir, { recursive: true });
+      const keyPrefix = [job.brandId, job.productId, job.id];
 
-      const { fileName, width, height } = await generateAndSaveImage(prompt, dir, assetId);
-      const publicUrl = `/storage/${job.brandId}/${job.productId}/${job.id}/${fileName}`;
+      const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId);
 
       outputs.push({
         generationJobId: job.id,
@@ -143,12 +144,10 @@ export async function runRegenerationPipeline(parentOutputId: string, instructio
     const job = parent.generationJob;
 
     const assetId = Math.random().toString(36).substring(2, 9);
-    const dir = path.join(process.cwd(), "public", "storage", job.brandId, job.productId, job.id);
-    await fs.mkdir(dir, { recursive: true });
+    const keyPrefix = [job.brandId, job.productId, job.id];
 
     const prompt = instructionText || job.promptRaw || `Generate a professional ${job.mode} image for brand ${job.brandId}`;
-    const { fileName, width, height } = await generateAndSaveImage(prompt, dir, assetId);
-    const publicUrl = `/storage/${job.brandId}/${job.productId}/${job.id}/${fileName}`;
+    const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId);
 
     const newOutput = await prisma.generationOutput.create({
       data: {
