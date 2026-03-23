@@ -59,27 +59,40 @@ export async function POST(request: Request) {
     );
   }
 
-  const job = await prisma.generationJob.create({
-    data: {
-      brandId,
-      productId,
-      campaignId: body.campaignId ? String(body.campaignId) : null,
-      mode,
-      promptRaw: body.promptRaw?.trim() || null,
-      paramsJson: body.params ? JSON.stringify(body.params) : null,
-      batchSize: Number.isFinite(body.batchSize) ? Math.max(1, Number(body.batchSize)) : 4,
-      status: "queued",
-    },
-  });
+  try {
+    const job = await prisma.generationJob.create({
+      data: {
+        brandId,
+        productId,
+        campaignId: body.campaignId ? String(body.campaignId) : null,
+        mode,
+        promptRaw: body.promptRaw?.trim() || null,
+        paramsJson: body.params ? JSON.stringify(body.params) : null,
+        batchSize: Number.isFinite(body.batchSize) ? Math.max(1, Number(body.batchSize)) : 4,
+        status: "queued",
+      },
+    });
 
-  // Kick off background generation (local-first mock execution)
-  runGenerationPipeline(job.id).catch(console.error);
+    // Kick off background generation (local-first mock execution)
+    runGenerationPipeline(job.id).catch(console.error);
 
-  return NextResponse.json(
-    {
-      data: job,
-      note: "Generation execution started.",
-    },
-    { status: 201 },
-  );
+    return NextResponse.json(
+      {
+        data: job,
+        note: "Generation execution started.",
+      },
+      { status: 201 },
+    );
+  } catch (error: any) {
+    if (error.code === 'P2003') {
+      return NextResponse.json(
+        { error: "Foreign key constraint failed. Ensure the selected Brand and Product exist." },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
 }
