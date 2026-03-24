@@ -3,8 +3,8 @@ import path from "path";
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 async function testGen() {
-  const prompt = "A professional studio shot of a leather wallet on a wooden table, high-key lighting";
-  console.log("Using API Key:", process.env.GEMINI_API_KEY?.substring(0, 5) + "...");
+  const prompt = "A wide shot of a beautiful car on a beach at sunset, 4k, professional photography";
+  console.log("Testing with aspectRatio: '16:9'");
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -13,6 +13,9 @@ async function testGen() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          aspectRatio: "16:9"
+        }
       }),
     }
   );
@@ -25,35 +28,8 @@ async function testGen() {
     return;
   }
 
-  console.log("Response structure keys:", Object.keys(json));
-  if (json.candidates) {
-      console.log("Number of candidates:", json.candidates.length);
-      const candidate = json.candidates[0];
-      console.log("Candidate keys:", Object.keys(candidate));
-      if (candidate.content) {
-          console.log("Content keys:", Object.keys(candidate.content));
-          if (candidate.content.parts) {
-              console.log("Number of parts:", candidate.content.parts.length);
-              const part = candidate.content.parts[0];
-              console.log("Part keys:", Object.keys(part));
-              if (part.inline_data) {
-                  console.log("inline_data keys:", Object.keys(part.inline_data));
-                  console.log("Mime type:", part.inline_data.mime_type);
-                  console.log("Data length:", part.inline_data.data?.length);
-              }
-              if (part.text) {
-                  console.log("Text content detected instead of image:", part.text);
-              }
-          }
-      }
-      if (candidate.finishReason) {
-          console.log("Finish reason:", candidate.finishReason);
-      }
-  }
-
-  if (json.promptFeedback) {
-      console.log("Prompt feedback:", json.promptFeedback);
-  }
+  console.log("SUCCESS: Response OK");
+  console.log("Finish Reason:", json.candidates?.[0]?.finishReason);
 }
 
 testGen().catch(console.error);

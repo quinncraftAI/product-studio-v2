@@ -21,12 +21,19 @@ const STATUSES = [
   { key: "partial", label: "Partial" },
 ];
 
+const SORTS = [
+  { key: "desc", label: "Newest First" },
+  { key: "asc", label: "Oldest First" },
+];
+
 export function FilterBar({
   mode,
   status,
+  sort = "desc",
 }: {
   mode: string;
   status: string;
+  sort?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,7 +76,19 @@ export function FilterBar({
         ))}
       </select>
 
-      {(mode || status) && (
+      <select
+        className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-black/10"
+        value={sort}
+        onChange={(e) => update("sort", e.target.value)}
+      >
+        {SORTS.map((s) => (
+          <option key={s.key} value={s.key}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+
+      {(mode || status || sort !== "desc") && (
         <button
           onClick={() => router.push("/history")}
           className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-100"

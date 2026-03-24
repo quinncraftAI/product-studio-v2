@@ -38,12 +38,12 @@ export function OutputActions({
   }
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="flex gap-1.5">
       <a
         href={filePath}
         download
         onClick={(e) => e.stopPropagation()}
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/40"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition-colors hover:bg-black/80"
         title="Download"
       >
         <svg
@@ -65,7 +65,7 @@ export function OutputActions({
       <button
         onClick={handleDelete}
         disabled={isDeleting}
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-red-500 disabled:opacity-50"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition-colors hover:bg-red-600 disabled:opacity-50"
         title="Delete"
       >
         {isDeleting ? (
