@@ -90,7 +90,6 @@ async function generateAndSaveImage(
     }
   }
 
-  // Map common ratios to Gemini expected format if needed
   const aspectRatio = options.aspectRatio || "1:1";
 
   const response = await fetch(
@@ -101,8 +100,10 @@ async function generateAndSaveImage(
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig: {
-          // We omit aspect_ratio here if it causes issues, but for 3.1 it SHOULD work in the correct schema
-          // For safety, we rely on the prompt or default 1:1 if the specific field is finicky
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: {
+            aspectRatio,
+          },
         },
       }),
     }
@@ -153,12 +154,6 @@ export async function runGenerationPipeline(jobId: string) {
     const refUrl = job.referenceImageUrl || job.product?.imageUrl;
 
     let prompt = job.promptRaw || `Professional ${job.mode} photography for ${job.product?.name || "product"}`;
-
-    // Append aspect ratio instruction to prompt since API config field is finicky
-    // Using a more explicit format known to work with some Gemini models
-    if (params.ratio && params.ratio !== "1:1") {
-      prompt += ` [aspect_ratio: ${params.ratio}]`;
-    }
 
     if (params.useEnhancer) {
       prompt = await enhancePrompt(prompt, {
