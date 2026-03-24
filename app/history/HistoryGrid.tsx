@@ -45,11 +45,13 @@ export function HistoryGrid({
   return (
     <div className="relative">
       {/* Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-px bg-zinc-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {initialOutputs.map((out) => (
           <div
             key={out.id}
-            className="group relative aspect-square cursor-zoom-in overflow-hidden"
+            className={`group relative cursor-zoom-in overflow-hidden ${
+                out.mode.includes('lifestyle') ? 'aspect-[4/5]' : 'aspect-square'
+            }`}
             onClick={() => setSelectedImage(out)}
           >
             <Image
@@ -88,8 +90,8 @@ export function HistoryGrid({
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
 
-          <div className="relative flex max-h-full max-w-5xl flex-col gap-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="relative aspect-square w-full max-w-3xl overflow-hidden rounded-lg shadow-2xl">
+          <div className="relative flex max-h-full w-full flex-col items-center gap-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="relative h-[80vh] w-full overflow-hidden rounded-lg shadow-2xl">
                 <Image
                     src={selectedImage.filePath}
                     alt={selectedImage.productName}
@@ -99,7 +101,7 @@ export function HistoryGrid({
                 />
             </div>
             
-            <div className="flex items-start justify-between px-2 text-white">
+            <div className="flex w-full max-w-3xl items-start justify-between px-2 text-white">
                 <div>
                     <h2 className="text-lg font-bold">{selectedImage.productName}</h2>
                     <p className="text-sm text-zinc-400">{selectedImage.brandName} · {selectedImage.mode.replace(/_/g, ' ')}</p>

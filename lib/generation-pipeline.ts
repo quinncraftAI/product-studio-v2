@@ -37,7 +37,13 @@ export async function enhancePrompt(
     params.lighting && `Lighting: ${params.lighting}`,
   ].filter(Boolean).join(", ");
 
-  const systemInstruction = `You are an expert image generation prompt engineer. Given a raw prompt and context, output exactly 2 sentences that form a highly optimized, vivid image generation prompt. Focus on product photography excellence, texture, and brand accuracy. Output only the 2-sentence prompt, nothing else.`;
+  const systemInstruction = `You are an expert image generation prompt engineer for high-end product photography. 
+Given a raw prompt and context, output exactly 2 sentences that form a highly optimized, vivid image generation prompt. 
+Focus on:
+1. Photorealistic textures and professional studio lighting (softbox, rim lighting).
+2. Clean, high-resolution details with NO artifacts, NO distortions, and NO plastic-looking surfaces.
+3. Realistic matte or glossy finishes as appropriate for the material.
+Output only the 2-sentence prompt, nothing else.`;
 
   const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
 
@@ -149,8 +155,9 @@ export async function runGenerationPipeline(jobId: string) {
     let prompt = job.promptRaw || `Professional ${job.mode} photography for ${job.product?.name || "product"}`;
 
     // Append aspect ratio instruction to prompt since API config field is finicky
+    // Using a more explicit format known to work with some Gemini models
     if (params.ratio && params.ratio !== "1:1") {
-      prompt += `. Use a ${params.ratio} aspect ratio.`;
+      prompt += ` [aspect_ratio: ${params.ratio}]`;
     }
 
     if (params.useEnhancer) {
@@ -169,6 +176,9 @@ export async function runGenerationPipeline(jobId: string) {
 
     const batchSize = job.batchSize || 1;
     for (let i = 0; i < batchSize; i++) {
+      // Add a small delay between batch items to prevent rate limiting
+      if (i > 0) await new Promise(resolve => setTimeout(resolve, 1500));
+
       const assetId = Math.random().toString(36).substring(2, 9);
       const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
 
