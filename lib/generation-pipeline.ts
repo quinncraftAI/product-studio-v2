@@ -18,7 +18,7 @@ export async function enhancePrompt(
   const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -42,28 +42,38 @@ export async function enhancePrompt(
 async function generateAndSaveImage(
   prompt: string,
   keyPrefix: string[],
-  assetId: string
+  assetId: string,
+  options: { aspectRatio?: string } = {}
 ): Promise<{ publicUrl: string; width: number; height: number }> {
+  // Use Gemini 3.1 Flash Image Preview (Nano Banana 2)
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:predict?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: { sampleCount: 1, aspectRatio: "1:1", outputOptions: { mimeType: "image/png" } },
+        contents: [
+          {
+            parts: [{ text: prompt }]
+          }
+        ],
+        generationConfig: { 
+          response_mime_type: "image/png",
+          aspect_ratio: options.aspectRatio || "1:1",
+          resolution: "1K"
+        },
       }),
     }
   );
 
   const json = await response.json();
 
-  if (!response.ok || !json.predictions || !json.predictions[0]) {
-    console.error("Imagen API Error:", JSON.stringify(json, null, 2));
-    throw new Error(json.error?.message || "Failed to generate image from Imagen API");
+  if (!response.ok || !json.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
+    console.error("Gemini Image API Error:", JSON.stringify(json, null, 2));
+    throw new Error(json.error?.message || "Failed to generate image from Gemini 3.1 Image API");
   }
 
-  const base64 = json.predictions[0].bytesBase64Encoded;
+  const base64 = json.candidates[0].content.parts[0].inline_data.data;
   const fileName = `${assetId}.png`;
 
   const { url } = await saveImage(Buffer.from(base64, "base64"), [...keyPrefix, fileName]);
@@ -83,7 +93,7 @@ export async function runGenerationPipeline(jobId: string) {
 
     const batchSize = job.batchSize;
     const outputs = [];
-    const rawPrompt = job.promptRaw || `Generate a professional ${job.mode} image for brand ${job.brandId}`;
+    const rawPrompt = job.promptRaw || `Generate a professional ${job.mode} image`;
 
     const params = job.paramsJson ? JSON.parse(job.paramsJson as string) : {};
     let prompt = rawPrompt;
@@ -91,8 +101,8 @@ export async function runGenerationPipeline(jobId: string) {
       prompt = await enhancePrompt(rawPrompt, {
         lighting: params.lighting,
         mode: job.mode,
-        product: job.productId,
-        brand: job.brandId,
+        product: job.productId || undefined,
+        brand: job.brandId || undefined,
         referenceImageUrl: job.referenceImageUrl,
       });
       await prisma.generationJob.update({
@@ -105,9 +115,11 @@ export async function runGenerationPipeline(jobId: string) {
 
     for (let i = 0; i < batchSize; i++) {
       const assetId = Math.random().toString(36).substring(2, 9);
-      const keyPrefix = [job.brandId, job.productId, job.id];
+      const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
 
-      const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId);
+      const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId, {
+        aspectRatio: params.ratio
+      });
 
       outputs.push({
         generationJobId: job.id,
@@ -148,9 +160,9 @@ export async function runRegenerationPipeline(parentOutputId: string, instructio
     const job = parent.generationJob;
 
     const assetId = Math.random().toString(36).substring(2, 9);
-    const keyPrefix = [job.brandId, job.productId, job.id];
+    const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
 
-    const prompt = instructionText || job.promptRaw || `Generate a professional ${job.mode} image for brand ${job.brandId}`;
+    const prompt = instructionText || job.promptRaw || `Generate a professional ${job.mode} image`;
     const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId);
 
     const newOutput = await prisma.generationOutput.create({

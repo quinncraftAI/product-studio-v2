@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -79,8 +78,8 @@ model Campaign {
 
 model GenerationJob {
   id             String           @id @default(cuid())
-  brandId        String
-  productId      String
+  brandId        String?
+  productId      String?
   campaignId     String?
   mode           GenerationMode
   promptRaw      String?
@@ -92,8 +91,8 @@ model GenerationJob {
   errorText      String?
   createdAt      DateTime         @default(now())
   completedAt    DateTime?
-  brand          Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  product        Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  brand          Brand?            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  product        Product?          @relation(fields: [productId], references: [id], onDelete: Cascade)
   campaign       Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   outputs        GenerationOutput[]
 

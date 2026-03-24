@@ -103,8 +103,9 @@ export default function StudioPage() {
   // Initial data load
   useEffect(() => {
     fetch("/api/brands")
-      .then((r) => r.json())
-      .then((j) => setBrands(j.data || []));
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((j) => setBrands(j.data || []))
+      .catch((e) => console.error("Failed to load brands:", e));
     loadBento();
   }, [loadBento]);
 
@@ -116,11 +117,12 @@ export default function StudioPage() {
       return;
     }
     fetch(`/api/products?brandId=${brandId}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((j) => {
         setProducts(j.data || []);
         setProductId("");
-      });
+      })
+      .catch((e) => console.error("Failed to load products:", e));
   }, [brandId]);
 
   // Poll current job
@@ -161,8 +163,8 @@ export default function StudioPage() {
   };
 
   const submitJob = async () => {
-    if (!brandId || !productId) {
-      setJobStatus("Select brand and product first");
+    if (!mode || (!brandId && !productId && !refImageFile)) {
+      setJobStatus("Select brand/product or upload an image");
       return;
     }
     setIsSubmitting(true);
@@ -184,8 +186,8 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId,
-          productId,
+          brandId: brandId || null,
+          productId: productId || null,
           mode,
           promptRaw,
           batchSize,
@@ -213,6 +215,27 @@ export default function StudioPage() {
       };
     });
     await fetch(`/api/outputs/${outputId}/${state}`, { method: "POST" });
+    if (state === "approved") loadBento();
+  };
+
+  const handleDelete = async (outputId: string) => {
+    if (!confirm("Are you sure you want to delete this output?")) return;
+    try {
+      const res = await fetch(`/api/outputs/${outputId}`, { method: "DELETE" });
+      if (res.ok) {
+        // Remove from current job if present
+        if (currentJob) {
+          setCurrentJob({
+            ...currentJob,
+            outputs: currentJob.outputs.filter((o) => o.id !== outputId),
+          });
+        }
+        // Always refresh bento
+        loadBento();
+      }
+    } catch (err) {
+      console.error("Failed to delete output:", err);
+    }
   };
 
   const submitRegen = async (outputId: string) => {
@@ -400,7 +423,7 @@ export default function StudioPage() {
         {/* Generate */}
         <button
           onClick={submitJob}
-          disabled={isSubmitting || !brandId || !productId}
+          disabled={isSubmitting || !mode || (!brandId && !productId && !refImageFile)}
           className="mt-1 w-full rounded-md bg-white px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-25"
         >
           {isSubmitting ? "Starting…" : "Generate"}
@@ -500,6 +523,49 @@ export default function StudioPage() {
                           <div className="flex justify-end gap-1">
                             {regenOutputId !== out.id && !isRegenerating[out.id] && (
                               <>
+                                <a
+                                  href={out.filePath}
+                                  download
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md hover:bg-zinc-800"
+                                  title="Download"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                  </svg>
+                                </a>
+                                <button
+                                  onClick={() => handleDelete(out.id)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md hover:bg-red-500"
+                                  title="Delete"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="3 6 5 6 21 6" />
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                  </svg>
+                                </button>
                                 <button
                                   onClick={() =>
                                     handleApproval(out.id, out.approvalState === "approved" ? "pending" : "approved")
@@ -509,6 +575,7 @@ export default function StudioPage() {
                                       ? "bg-emerald-500"
                                       : "bg-black/60 hover:bg-emerald-500"
                                   }`}
+                                  title="Approve"
                                 >
                                   <CheckIcon />
                                 </button>
@@ -521,6 +588,7 @@ export default function StudioPage() {
                                       ? "bg-red-500"
                                       : "bg-black/60 hover:bg-red-500"
                                   }`}
+                                  title="Reject"
                                 >
                                   <XIcon />
                                 </button>
@@ -613,12 +681,59 @@ export default function StudioPage() {
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
                       unoptimized
                     />
-                    <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
-                      <div>
-                        <p className="text-[11px] font-semibold text-white">{item.productName}</p>
-                        <p className="text-[9px] text-zinc-400">
-                          {item.brandName} · {item.mode.replace(/_/g, " ")}
-                        </p>
+                    <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/80 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex w-full items-end justify-between">
+                        <div>
+                          <p className="text-[11px] font-semibold text-white">{item.productName}</p>
+                          <p className="text-[9px] text-zinc-400">
+                            {item.brandName} · {(item.mode || "").replace(/_/g, " ")}
+                          </p>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <a
+                            href={item.filePath}
+                            download
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md hover:bg-white/20"
+                            title="Download"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                          </a>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md hover:bg-red-500"
+                            title="Delete"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -636,7 +751,7 @@ export default function StudioPage() {
                 ))}
               </div>
               <p className="text-sm font-medium text-zinc-500">No generations yet</p>
-              <p className="text-xs text-zinc-700">Select a brand and product, then hit Generate.</p>
+              <p className="text-xs text-zinc-700">Select brand/product or upload an image, then hit Generate.</p>
             </div>
           )}
         </div>

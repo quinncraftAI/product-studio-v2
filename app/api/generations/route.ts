@@ -49,13 +49,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = (await request.json()) as CreateGenerationBody;
 
-  const brandId = String(body.brandId ?? "").trim();
-  const productId = String(body.productId ?? "").trim();
+  const brandId = body.brandId ? String(body.brandId).trim() : null;
+  const productId = body.productId ? String(body.productId).trim() : null;
   const mode = body.mode;
+  const referenceImageUrl = body.referenceImageUrl?.trim() || null;
 
-  if (!brandId || !productId || !mode) {
+  if (!mode || (!brandId && !productId && !referenceImageUrl)) {
     return NextResponse.json(
-      { error: "brandId, productId and mode are required" },
+      { error: "brandId, productId or referenceImageUrl is required along with mode" },
       { status: 400 },
     );
   }
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
         mode,
         promptRaw: body.promptRaw?.trim() || null,
         paramsJson: body.params ? JSON.stringify(body.params) : null,
-        referenceImageUrl: body.referenceImageUrl?.trim() || null,
+        referenceImageUrl,
         batchSize: Number.isFinite(body.batchSize) ? Math.max(1, Number(body.batchSize)) : 4,
         status: "queued",
       },
