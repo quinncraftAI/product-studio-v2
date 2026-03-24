@@ -44,6 +44,8 @@ async function generateAndSaveImage(
   keyPrefix: string[],
   assetId: string
 ): Promise<{ publicUrl: string; width: number; height: number }> {
+  console.log(`Gemini API: Generating image with prompt: "${prompt.substring(0, 100)}..."`);
+  
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -57,14 +59,39 @@ async function generateAndSaveImage(
 
   const json: any = await response.json();
   if (!response.ok) {
-    throw new Error(`Gemini Image API Error: ${JSON.stringify(json)}`);
+    console.error("Gemini Image API Error Response:", JSON.stringify(json, null, 2));
+    throw new Error(`Gemini Image API Error: ${json.error?.message || response.statusText}`);
   }
 
-  const part = json.candidates?.[0]?.content?.parts?.[0];
-  const base64 = part?.inline_data?.data || part?.data;
+  // Permissive extraction of image data (handles snake_case and camelCase)
+  let base64: string | undefined;
+  
+  const candidates = json.candidates || [];
+  for (const candidate of candidates) {
+    const parts = candidate.content?.parts || [];
+    for (const part of parts) {
+      // Check inline_data (snake_case)
+      if (part.inline_data?.data) {
+        base64 = part.inline_data.data;
+        break;
+      }
+      // Check inlineData (camelCase)
+      if (part.inlineData?.data) {
+        base64 = part.inlineData.data;
+        break;
+      }
+      // Check direct data field (fallback)
+      if (part.data) {
+        base64 = part.data;
+        break;
+      }
+    }
+    if (base64) break;
+  }
 
   if (!base64) {
-    throw new Error("No image data found in Gemini response");
+    console.error("Gemini API Full JSON (No Image Found):", JSON.stringify(json, null, 2));
+    throw new Error("No image data found in Gemini API response (scanned candidates/parts/inlineData)");
   }
 
   const fileName = `${assetId}.png`;
@@ -80,7 +107,10 @@ export async function runGenerationPipeline(jobId: string) {
       where: { id: jobId },
       include: { brand: true, product: true }
     });
-    if (!job) return;
+    if (!job) {
+        console.error(`Pipeline Error: Job ${jobId} not found in database`);
+        return;
+    }
 
     await prisma.generationJob.update({
       where: { id: jobId },
@@ -91,6 +121,7 @@ export async function runGenerationPipeline(jobId: string) {
     let prompt = job.promptRaw || `Professional ${job.mode} photography`;
 
     if (params.useEnhancer) {
+      console.log(`Pipeline: Enhancing prompt for job ${jobId}`);
       prompt = await enhancePrompt(prompt, {
         lighting: params.lighting,
         mode: job.mode,
@@ -128,13 +159,16 @@ export async function runGenerationPipeline(jobId: string) {
       where: { id: jobId },
       data: { status: "completed", completedAt: new Date() },
     });
-    console.log(`Pipeline: Job ${jobId} completed`);
+    console.log(`Pipeline: Job ${jobId} completed successfully`);
   } catch (err) {
-    console.error("Pipeline failed:", err);
+    console.error(`Pipeline Error (Job ${jobId}):`, err);
     await prisma.generationJob.update({
       where: { id: jobId },
-      data: { status: "failed", errorText: String(err) },
-    }).catch(console.error);
+      data: { 
+          status: "failed", 
+          errorText: err instanceof Error ? err.message : String(err) 
+      },
+    }).catch(e => console.error("Critical: Failed to update job status to FAILED", e));
   }
 }
 

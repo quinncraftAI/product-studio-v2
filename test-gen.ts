@@ -3,7 +3,7 @@ import path from "path";
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 async function testGen() {
-  const prompt = "A futuristic product shot of a high-end sneaker, floating in neon atmosphere, 4k, professional photography";
+  const prompt = "A professional studio shot of a leather wallet on a wooden table, high-key lighting";
   console.log("Using API Key:", process.env.GEMINI_API_KEY?.substring(0, 5) + "...");
 
   const response = await fetch(
@@ -13,10 +13,6 @@ async function testGen() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          aspect_ratio: "16:9",
-          resolution: "1K"
-        }
       }),
     }
   );
@@ -29,17 +25,34 @@ async function testGen() {
     return;
   }
 
-  const part = json.candidates?.[0]?.content?.parts?.[0];
-  if (part?.inline_data) {
-    console.log("SUCCESS: Found inline_data image.");
-    console.log("Mime Type:", part.inline_data.mime_type);
-    console.log("Data Length:", part.inline_data.data.length);
-  } else if (part?.text) {
-    console.log("FAILURE: Received text instead of image.");
-    console.log("Text:", part.text);
-  } else {
-    console.log("FAILURE: No recognized content in response.");
-    console.log(JSON.stringify(json, null, 2));
+  console.log("Response structure keys:", Object.keys(json));
+  if (json.candidates) {
+      console.log("Number of candidates:", json.candidates.length);
+      const candidate = json.candidates[0];
+      console.log("Candidate keys:", Object.keys(candidate));
+      if (candidate.content) {
+          console.log("Content keys:", Object.keys(candidate.content));
+          if (candidate.content.parts) {
+              console.log("Number of parts:", candidate.content.parts.length);
+              const part = candidate.content.parts[0];
+              console.log("Part keys:", Object.keys(part));
+              if (part.inline_data) {
+                  console.log("inline_data keys:", Object.keys(part.inline_data));
+                  console.log("Mime type:", part.inline_data.mime_type);
+                  console.log("Data length:", part.inline_data.data?.length);
+              }
+              if (part.text) {
+                  console.log("Text content detected instead of image:", part.text);
+              }
+          }
+      }
+      if (candidate.finishReason) {
+          console.log("Finish reason:", candidate.finishReason);
+      }
+  }
+
+  if (json.promptFeedback) {
+      console.log("Prompt feedback:", json.promptFeedback);
   }
 }
 
