@@ -17,8 +17,9 @@ export async function enhancePrompt(
 
   const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
 
+  // Using gemini-3-flash-preview as requested
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -46,7 +47,7 @@ async function generateAndSaveImage(
   options: { aspectRatio?: string } = {}
 ): Promise<{ publicUrl: string; width: number; height: number }> {
   // Use Gemini 3.1 Flash Image Preview (Nano Banana 2)
-  // Trying minimal config first to confirm connectivity, then will add parameters if supported
+  // Removed response_mime_type to avoid INVALID_ARGUMENT error
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -58,9 +59,8 @@ async function generateAndSaveImage(
             parts: [{ text: prompt }]
           }
         ],
-        generationConfig: { 
-          response_mime_type: "image/png"
-          // aspect_ratio and resolution removed for now due to "Unknown name" errors in v1beta/generateContent
+        generationConfig: {
+          // No response_mime_type here as it defaults to text-like formats in generateContent
         },
       }),
     }
@@ -68,12 +68,19 @@ async function generateAndSaveImage(
 
   const json = await response.json();
 
-  if (!response.ok || !json.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data) {
-    console.error("Gemini Image API Error:", JSON.stringify(json, null, 2));
-    throw new Error(json.error?.message || "Failed to generate image from Gemini 3.1 Image API");
+  // Log the structure to see where the image data is
+  console.log("Gemini Image API Full Response:", JSON.stringify(json, null, 2));
+
+  // Check for inline_data in parts
+  const part = json.candidates?.[0]?.content?.parts?.[0];
+  const imageData = part?.inline_data?.data || part?.data;
+
+  if (!response.ok || !imageData) {
+    console.error("Gemini Image API Error (No image data):", JSON.stringify(json, null, 2));
+    throw new Error(json.error?.message || "Failed to generate image from Gemini 3.1 Image API (No data found)");
   }
 
-  const base64 = json.candidates[0].content.parts[0].inline_data.data;
+  const base64 = imageData;
   const fileName = `${assetId}.png`;
 
   const { url } = await saveImage(Buffer.from(base64, "base64"), [...keyPrefix, fileName]);
