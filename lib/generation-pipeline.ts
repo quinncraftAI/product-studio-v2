@@ -18,26 +18,31 @@ export async function enhancePrompt(
   const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
 
   // Using gemini-3-flash-preview as requested
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: "user", parts: [{ text: userMessage }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
-      }),
-    }
-  );
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemInstruction }] },
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
+        }),
+      }
+    );
 
-  const json = await response.json();
-  if (!response.ok || !json.candidates?.[0]?.content?.parts?.[0]?.text) {
-    console.error("Gemini enhance error:", JSON.stringify(json, null, 2));
+    const json = await response.json();
+    if (!response.ok || !json.candidates?.[0]?.content?.parts?.[0]?.text) {
+      console.error("Gemini enhance error:", JSON.stringify(json, null, 2));
+      return rawPrompt;
+    }
+
+    return json.candidates[0].content.parts[0].text.trim();
+  } catch (err) {
+    console.error("Failed to enhance prompt:", err);
     return rawPrompt;
   }
-
-  return json.candidates[0].content.parts[0].text.trim();
 }
 
 async function generateAndSaveImage(
@@ -47,7 +52,8 @@ async function generateAndSaveImage(
   options: { aspectRatio?: string } = {}
 ): Promise<{ publicUrl: string; width: number; height: number }> {
   // Use Gemini 3.1 Flash Image Preview (Nano Banana 2)
-  // Removed response_mime_type to avoid INVALID_ARGUMENT error
+  console.log(`Generating image for prompt: ${prompt.substring(0, 50)}...`);
+  
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -60,7 +66,7 @@ async function generateAndSaveImage(
           }
         ],
         generationConfig: {
-          // No response_mime_type here as it defaults to text-like formats in generateContent
+          // Defaults
         },
       }),
     }
@@ -68,21 +74,36 @@ async function generateAndSaveImage(
 
   const json = await response.json();
 
-  // Log the structure to see where the image data is
-  console.log("Gemini Image API Full Response:", JSON.stringify(json, null, 2));
-
-  // Check for inline_data in parts
-  const part = json.candidates?.[0]?.content?.parts?.[0];
-  const imageData = part?.inline_data?.data || part?.data;
-
-  if (!response.ok || !imageData) {
-    console.error("Gemini Image API Error (No image data):", JSON.stringify(json, null, 2));
-    throw new Error(json.error?.message || "Failed to generate image from Gemini 3.1 Image API (No data found)");
+  if (!response.ok) {
+    console.error("Gemini Image API Error (Response not OK):", JSON.stringify(json, null, 2));
+    throw new Error(json.error?.message || "Failed to generate image from Gemini 3.1 Image API");
   }
 
-  const base64 = imageData;
-  const fileName = `${assetId}.png`;
+  // Robust extraction of image data
+  let base64: string | undefined;
+  
+  const candidates = json.candidates || [];
+  for (const candidate of candidates) {
+    const parts = candidate.content?.parts || [];
+    for (const part of parts) {
+      if (part.inline_data?.data) {
+        base64 = part.inline_data.data;
+        break;
+      }
+      if (part.data) {
+        base64 = part.data;
+        break;
+      }
+    }
+    if (base64) break;
+  }
 
+  if (!base64) {
+    console.error("Gemini Image API Error (No data found in candidates):", JSON.stringify(json, null, 2));
+    throw new Error("No image data found in Gemini API response");
+  }
+
+  const fileName = `${assetId}.png`;
   const { url } = await saveImage(Buffer.from(base64, "base64"), [...keyPrefix, fileName]);
 
   return { publicUrl: url, width: 1024, height: 1024 };
@@ -99,7 +120,6 @@ export async function runGenerationPipeline(jobId: string) {
     if (!job) return;
 
     const batchSize = job.batchSize;
-    const outputs = [];
     const rawPrompt = job.promptRaw || `Generate a professional ${job.mode} image`;
 
     const params = job.paramsJson ? JSON.parse(job.paramsJson as string) : {};
@@ -120,27 +140,27 @@ export async function runGenerationPipeline(jobId: string) {
       prompt = `${prompt}. Reference product image: ${job.referenceImageUrl}`;
     }
 
+    const outputPromises = [];
     for (let i = 0; i < batchSize; i++) {
       const assetId = Math.random().toString(36).substring(2, 9);
       const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
 
-      const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId, {
+      // Sequential for now to avoid hitting rate limits too hard
+      const result = await generateAndSaveImage(prompt, keyPrefix, assetId, {
         aspectRatio: params.ratio
       });
 
-      outputs.push({
-        generationJobId: job.id,
-        filePath: publicUrl,
-        thumbPath: publicUrl,
-        width,
-        height,
-        mimeType: "image/jpeg",
-        approvalState: "pending",
+      await prisma.generationOutput.create({
+        data: {
+          generationJobId: job.id,
+          filePath: result.publicUrl,
+          thumbPath: result.publicUrl,
+          width: result.width,
+          height: result.height,
+          mimeType: "image/png",
+          approvalState: "pending",
+        }
       });
-    }
-
-    for (const output of outputs) {
-      await prisma.generationOutput.create({ data: output as any });
     }
 
     await prisma.generationJob.update({
@@ -170,18 +190,18 @@ export async function runRegenerationPipeline(parentOutputId: string, instructio
     const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
 
     const prompt = instructionText || job.promptRaw || `Generate a professional ${job.mode} image`;
-    const { publicUrl, width, height } = await generateAndSaveImage(prompt, keyPrefix, assetId);
+    const result = await generateAndSaveImage(prompt, keyPrefix, assetId);
 
     const newOutput = await prisma.generationOutput.create({
       data: {
         generationJobId: job.id,
         parentOutputId: parent.id,
         versionNo: parent.versionNo + 1,
-        filePath: publicUrl,
-        thumbPath: publicUrl,
-        width,
-        height,
-        mimeType: "image/jpeg",
+        filePath: result.publicUrl,
+        thumbPath: result.publicUrl,
+        width: result.width,
+        height: result.height,
+        mimeType: "image/png",
         approvalState: "pending",
         metadataJson: JSON.stringify({ instruction: instructionText }),
       },
