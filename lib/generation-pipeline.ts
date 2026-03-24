@@ -46,6 +46,7 @@ async function generateAndSaveImage(
   options: { aspectRatio?: string } = {}
 ): Promise<{ publicUrl: string; width: number; height: number }> {
   // Use Gemini 3.1 Flash Image Preview (Nano Banana 2)
+  // Trying minimal config first to confirm connectivity, then will add parameters if supported
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
@@ -58,9 +59,8 @@ async function generateAndSaveImage(
           }
         ],
         generationConfig: { 
-          response_mime_type: "image/png",
-          aspect_ratio: options.aspectRatio || "1:1",
-          resolution: "1K"
+          response_mime_type: "image/png"
+          // aspect_ratio and resolution removed for now due to "Unknown name" errors in v1beta/generateContent
         },
       }),
     }

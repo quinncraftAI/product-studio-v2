@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { FilterBar } from "./FilterBar";
+import { OutputActions } from "./OutputActions";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ function ThumbnailGrid({ outputs }: { outputs: Output[] }) {
       {visible.map((out) => (
         <div
           key={out.id}
-          className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-zinc-100
+          className={`group relative aspect-square overflow-hidden rounded-lg border-2 bg-zinc-100
             ${out.approvalState === "approved" ? "border-emerald-400" :
               out.approvalState === "rejected" ? "border-red-300 opacity-50 grayscale" :
               "border-zinc-200"}`}
@@ -132,6 +133,7 @@ function ThumbnailGrid({ outputs }: { outputs: Output[] }) {
             className="object-cover"
             sizes="80px"
           />
+          <OutputActions outputId={out.id} filePath={out.filePath} />
           {out.versionNo > 1 && (
             <div className="absolute bottom-0.5 right-0.5 rounded bg-indigo-500/80 px-1 py-0.5 text-[8px] font-bold text-white leading-none">
               v{out.versionNo}
