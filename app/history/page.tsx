@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { FilterBar } from "./FilterBar";
 import { HistoryGrid } from "./HistoryGrid";
@@ -35,6 +34,8 @@ export default async function HistoryPage({
       id: out.id,
       filePath: out.filePath,
       thumbPath: out.thumbPath,
+      width: out.width,
+      height: out.height,
       approvalState: out.approvalState,
       versionNo: out.versionNo,
       createdAt: out.createdAt,
@@ -68,13 +69,6 @@ export default async function HistoryPage({
             <Suspense fallback={<div className="h-9 w-64 animate-pulse rounded-lg bg-zinc-100" />}>
               <FilterBar mode={modeFilter} status={statusFilter} sort={sort} />
             </Suspense>
-
-            <Link
-              href="/studio"
-              className="hidden rounded-full bg-black px-5 py-2 text-sm font-semibold text-white transition-transform hover:scale-105 sm:block"
-            >
-              + Create
-            </Link>
           </div>
         </div>
       </header>

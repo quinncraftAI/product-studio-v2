@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import Image from "next/image";
 
 type OutputItem = {
   id: string;
   filePath: string;
   thumbPath: string | null;
+  width?: number | null;
+  height?: number | null;
   mode: string;
   jobId: string;
   createdAt: string;
@@ -182,24 +185,26 @@ export default function LibraryPage() {
                         <span className="ml-2 font-mono text-xs text-zinc-400">SKU: {product.sku}</span>
                       )}
                     </h3>
-                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                    <div className="columns-2 gap-3 sm:columns-3 md:columns-4 lg:columns-5">
                       {product.outputs.map((output) => {
                         const isSelected = selected.has(output.id);
                         return (
                           <button
                             key={output.id}
                             onClick={() => toggleOutput(output.id)}
-                            className={`group relative aspect-square overflow-hidden rounded-lg border-2 transition-all ${
+                            className={`group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border-2 transition-all ${
                               isSelected
-                                ? "border-black ring-2 ring-black ring-offset-1"
-                                : "border-transparent hover:border-zinc-300"
+                                ? "border-black ring-2 ring-black ring-offset-2"
+                                : "border-transparent hover:border-zinc-300 hover:shadow-md"
                             }`}
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
+                            <Image
                               src={output.thumbPath ?? output.filePath}
                               alt={`${output.mode} output`}
-                              className="h-full w-full object-cover"
+                              width={output.width || 1024}
+                              height={output.height || 1024}
+                              className="h-auto w-full object-cover block"
+                              unoptimized
                             />
                             <div
                               className={`absolute inset-0 flex items-end bg-gradient-to-t from-black/60 to-transparent p-1.5 transition-opacity ${

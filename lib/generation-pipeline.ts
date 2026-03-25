@@ -30,6 +30,19 @@ export async function enhancePrompt(
   rawPrompt: string,
   params: { lighting?: string; mode?: string; product?: string; brand?: string; referenceImageUrl?: string | null }
 ): Promise<string> {
+  let modeSpecificInstructions = "";
+  if (params.mode === "social_post") {
+    modeSpecificInstructions = `5. SOCIAL MEDIA POST MODE (PINTEREST/IG AESTHETIC): You MUST use your Google Search tool to look up current viral Pinterest aesthetics for this specific product/category. Analyze the current trending visual composition, micro-environments, authentic lifestyle integration, soft aesthetic lighting, and trendy props. Apply these exact findings to the prompt. The aesthetic MUST be highly engaging and native to platforms like Instagram or TikTok, avoiding sterile catalog shots.
+6. TYPOGRAPHY REQUIRED: You MUST include instructions to render text on the image. Specify a short, catchy brand hook or aesthetic phrase (e.g., "The words 'New Arrival' written in elegant modern typography").`;
+  } else if (params.mode === "performance_creative") {
+    modeSpecificInstructions = `5. PERFORMANCE CREATIVE MODE (HIGH-CONVERTING AD): You MUST use your Google Search tool to look up top-performing Facebook/Instagram ad creative trends for this specific product/category. The image MUST be high-contrast, scroll-stopping, and designed to drive conversions based on real-world native media buying trends. Use strong visual hierarchy, bold color contrasts, and clear product focus.
+6. TYPOGRAPHY REQUIRED: You MUST include instructions for strong Call-To-Action (CTA) text overlay. Specify exact selling text (e.g., "The text '50% OFF' displayed prominently in bold, high-contrast typography").`;
+  }
+
+  const lightingInstruction = params.lighting
+    ? `3. LIGHTING REQUIREMENT: You MUST strictly apply the exact lighting style requested: "${params.lighting}". This lighting must dictate the primary mood, shadows, and highlights of the entire scene, overriding any generic lighting.`
+    : `3. LIGHTING: Apply lighting appropriate for the scene.`;
+
   const contextParts = [
     params.mode && `Mode: ${params.mode}`,
     params.product && `Product: ${params.product}`,
@@ -37,25 +50,30 @@ export async function enhancePrompt(
     params.lighting && `Lighting: ${params.lighting}`,
   ].filter(Boolean).join(", ");
 
-  const systemInstruction = `You are an expert image generation prompt engineer for high-end product photography. 
-Given a raw prompt and context, output exactly 2 sentences that form a highly optimized, vivid image generation prompt. 
-Focus on:
-1. Photorealistic textures and professional studio lighting (softbox, rim lighting).
-2. Clean, high-resolution details with NO artifacts, NO distortions, and NO plastic-looking surfaces.
-3. Realistic matte or glossy finishes as appropriate for the material.
-Output only the 2-sentence prompt, nothing else.`;
+  const systemInstruction = `You are an expert image generation prompt engineer for high-end product photography.
+Your goal is to rewrite the user's raw prompt into a highly optimized, vivid image generation prompt tailored for an advanced AI image generator that can render text.
 
-  const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized 2-sentence image generation prompt:`;
+CRITICAL INSTRUCTIONS:
+1. PRODUCT ACCURACY: You must thoroughly understand the product and brand. The product's core identity, shape, branding, and function MUST remain the exact focal point. Do not invent features, change its fundamental design, or add irrelevant objects that distract from the main product.
+2. STRUCTURE: Start with a clear description of the main subject (the product), followed by its placement/environment, then lighting and camera details, and finally any typography/text instructions.
+${lightingInstruction}
+4. ALIGNMENT: Strictly adhere to the requested "Mode" (e.g., flatlay, lifestyle, white_bg). If it's lifestyle, seamlessly integrate the product into a realistic, culturally appropriate scene.
+${modeSpecificInstructions}
+
+Output exactly 3 to 5 sentences forming the final prompt. Output ONLY the optimized prompt, with no introductory text. Enclose any specific text meant to be rendered on the image in double quotes.`;
+
+  const userMessage = `Raw prompt: "${rawPrompt}"\nContext: ${contextParts || "none"}\n\nWrite the optimized image generation prompt:`;
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction }] },
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          tools: [{ googleSearch: {} }],
           generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
         }),
       }
@@ -224,9 +242,13 @@ export async function runRegenerationPipeline(parentOutputId: string, instructio
   const assetId = Math.random().toString(36).substring(2, 9);
   const keyPrefix = [job.brandId || "unbranded", job.productId || "unnamed", job.id];
   const refUrl = job.referenceImageUrl || job.product?.imageUrl;
+  
+  // Extract ratio from original job params
+  const params = job.paramsJson ? JSON.parse(job.paramsJson as string) : {};
 
   const result = await generateAndSaveImage(instructionText, keyPrefix, assetId, {
-    referenceImageUrl: refUrl
+    referenceImageUrl: refUrl,
+    aspectRatio: params.ratio
   });
 
   return prisma.generationOutput.create({

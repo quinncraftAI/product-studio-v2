@@ -8,6 +8,8 @@ type OutputExtended = {
   id: string;
   filePath: string;
   thumbPath: string | null;
+  width?: number | null;
+  height?: number | null;
   approvalState: string;
   versionNo: number;
   createdAt: Date;
@@ -43,22 +45,21 @@ export function HistoryGrid({
   }
 
   return (
-    <div className="relative">
+    <div className="relative p-4">
       {/* Grid */}
-      <div className="grid grid-cols-2 gap-px bg-zinc-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="columns-2 gap-4 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6">
         {initialOutputs.map((out) => (
           <div
             key={out.id}
-            className={`group relative cursor-zoom-in overflow-hidden ${
-                out.mode.includes('lifestyle') ? 'aspect-[4/5]' : 'aspect-square'
-            }`}
+            className="group mb-4 relative cursor-zoom-in overflow-hidden rounded-xl break-inside-avoid shadow-sm hover:shadow-md transition-shadow"
             onClick={() => setSelectedImage(out)}
           >
             <Image
               src={out.thumbPath ?? out.filePath}
               alt={out.productName}
-              fill
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
+              width={out.width || 1024}
+              height={out.height || 1024}
+              className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105"
               sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
               unoptimized
             />

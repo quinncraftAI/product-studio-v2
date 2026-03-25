@@ -42,6 +42,8 @@ export async function GET() {
               id: output.id,
               filePath: output.filePath,
               thumbPath: output.thumbPath,
+              width: output.width,
+              height: output.height,
               mode: job.mode,
               jobId: job.id,
               createdAt: output.createdAt,

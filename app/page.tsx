@@ -13,21 +13,38 @@ type JobOutput = {
   parentOutputId: string | null;
 };
 type Job = { id: string; status: string; batchSize: number; outputs: JobOutput[] };
-type BentoItem = { id: string; filePath: string; mode: string; brandName: string; productName: string };
+type BentoItem = { id: string; filePath: string; width?: number | null; height?: number | null; mode: string; brandName: string; productName: string };
 
 const MODES = [
-  { key: "white_bg_ecommerce", label: "White BG (E-commerce)" },
+  { key: "white_bg_ecommerce", label: "White BG" },
   { key: "flatlay", label: "Flatlay" },
-  { key: "lifestyle_indian", label: "Lifestyle (Indian)" },
-  { key: "lifestyle_international", label: "Lifestyle (International)" },
-  { key: "stylised_product", label: "Stylised Product" },
+  { key: "lifestyle_indian", label: "Lifestyle (IN)" },
+  { key: "lifestyle_international", label: "Lifestyle (INT)" },
+  { key: "stylised_product", label: "Stylised" },
   { key: "social_post", label: "Social Post" },
-  { key: "performance_creative", label: "Performance Creative" },
-  { key: "custom_prompt", label: "Custom Prompt" },
+  { key: "performance_creative", label: "Performance" },
+  { key: "custom_prompt", label: "Custom" },
 ];
 
-const RATIOS = ["1:1", "4:5", "9:16", "16:9"];
-const LIGHTING_OPTS = ["studio soft", "golden hour", "overcast", "neon ambient", "high-key white"];
+const RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
+const LIGHTING_PRESETS = [
+  "studio soft",
+  "dramatic rim",
+  "natural sunlight",
+  "golden hour",
+  "overcast diffused",
+  "neon cyberpunk",
+  "neon ambient",
+  "cinematic moody",
+  "ethereal high key",
+  "harsh midday sun",
+  "bioluminescence",
+  "dutch master chiaroscuro",
+  "high-key white",
+  "backlit silhouette",
+  "warm candlelight",
+  "cool moonlight",
+];
 
 const SELECT_CLS =
   "rounded-md border border-[#27272a] bg-[#0a0a0a] px-2 py-1.5 text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600 disabled:opacity-40";
@@ -54,7 +71,7 @@ export default function StudioPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [brandId, setBrandId] = useState("");
   const [productId, setProductId] = useState("");
-  const [mode, setMode] = useState("white_bg_ecommerce");
+  const [selectedModes, setSelectedModes] = useState<Set<string>>(new Set(["white_bg_ecommerce"]));
   const [ratio, setRatio] = useState("1:1");
   const [lighting, setLighting] = useState("studio soft");
   const [batchSize, setBatchSize] = useState(4);
@@ -69,7 +86,7 @@ export default function StudioPage() {
 
   // Job state
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currentJob, setCurrentJob] = useState<Job | null>(null);
+  const [currentJobs, setCurrentJobs] = useState<Job[]>([]);
   const [jobStatus, setJobStatus] = useState("");
 
   // Bento grid
@@ -90,6 +107,8 @@ export default function StudioPage() {
           items.push({
             id: output.id,
             filePath: output.filePath,
+            width: output.width,
+            height: output.height,
             mode: output.mode,
             brandName: brand.name,
             productName: product.name,
@@ -125,24 +144,33 @@ export default function StudioPage() {
       .catch((e) => console.error("Failed to load products:", e));
   }, [brandId]);
 
-  // Poll current job
+  // Poll current jobs
   useEffect(() => {
-    if (!currentJob || (currentJob.status !== "queued" && currentJob.status !== "running")) return;
+    const polling = currentJobs.filter(j => j.status === "queued" || j.status === "running");
+    if (!polling.length) return;
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/generations/${currentJob.id}`);
-      const json = await res.json();
-      if (res.ok && json.data) {
-        setCurrentJob(json.data);
-        if (json.data.status === "completed") {
-          setJobStatus("Complete");
-          loadBento();
-        } else if (json.data.status === "failed") {
-          setJobStatus("Failed");
-        }
+      const updated = await Promise.all(
+        currentJobs.map(async (job) => {
+          if (job.status !== "queued" && job.status !== "running") return job;
+          try {
+            const res = await fetch(`/api/generations/${job.id}`);
+            const json = await res.json();
+            if (res.ok && json.data) return json.data;
+          } catch {}
+          return job;
+        })
+      );
+      setCurrentJobs(updated);
+      if (updated.every(j => j.status === "completed")) {
+        setJobStatus("Complete");
+        loadBento();
+      } else if (updated.every(j => j.status === "completed" || j.status === "failed")) {
+        setJobStatus("Partial");
+        loadBento();
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [currentJob, loadBento]);
+  }, [currentJobs, loadBento]);
 
   const handleFileChange = (file: File | null) => {
     setRefImageFile(file);
@@ -163,13 +191,13 @@ export default function StudioPage() {
   };
 
   const submitJob = async () => {
-    if (!mode || (!brandId && !productId && !refImageFile)) {
+    if (selectedModes.size === 0 || (!brandId && !productId && !refImageFile)) {
       setJobStatus("Select brand/product or upload an image");
       return;
     }
     setIsSubmitting(true);
     setJobStatus("Starting…");
-    setCurrentJob(null);
+    setCurrentJobs([]);
 
     let referenceImageUrl: string | undefined;
     if (refImageFile) {
@@ -182,23 +210,27 @@ export default function StudioPage() {
     }
 
     try {
-      const res = await fetch("/api/generations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brandId: brandId || null,
-          productId: productId || null,
-          mode,
-          promptRaw,
-          batchSize,
-          referenceImageUrl,
-          params: { ratio, lighting, useEnhancer },
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to queue job");
-      setJobStatus("Queued");
-      setCurrentJob({ ...json.data, outputs: [] });
+      const newJobs: Job[] = [];
+      for (const mode of Array.from(selectedModes)) {
+        const res = await fetch("/api/generations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandId: brandId || null,
+            productId: productId || null,
+            mode,
+            promptRaw,
+            batchSize,
+            referenceImageUrl,
+            params: { ratio, lighting, useEnhancer },
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Failed to queue job");
+        newJobs.push({ ...json.data, outputs: [] });
+      }
+      setJobStatus(`${newJobs.length} job${newJobs.length !== 1 ? "s" : ""} queued`);
+      setCurrentJobs(newJobs);
     } catch (err) {
       setJobStatus(err instanceof Error ? err.message : "Error");
     } finally {
@@ -207,13 +239,12 @@ export default function StudioPage() {
   };
 
   const handleApproval = async (outputId: string, state: "approved" | "rejected" | "pending") => {
-    setCurrentJob((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        outputs: prev.outputs.map((o) => (o.id === outputId ? { ...o, approvalState: state } : o)),
-      };
-    });
+    setCurrentJobs((prev) =>
+      prev.map((job) => ({
+        ...job,
+        outputs: job.outputs.map((o) => (o.id === outputId ? { ...o, approvalState: state } : o)),
+      }))
+    );
     await fetch(`/api/outputs/${outputId}/${state}`, { method: "POST" });
     if (state === "approved") loadBento();
   };
@@ -223,14 +254,9 @@ export default function StudioPage() {
     try {
       const res = await fetch(`/api/outputs/${outputId}`, { method: "DELETE" });
       if (res.ok) {
-        // Remove from current job if present
-        if (currentJob) {
-          setCurrentJob({
-            ...currentJob,
-            outputs: currentJob.outputs.filter((o) => o.id !== outputId),
-          });
-        }
-        // Always refresh bento
+        setCurrentJobs((prev) =>
+          prev.map((job) => ({ ...job, outputs: job.outputs.filter((o) => o.id !== outputId) }))
+        );
         loadBento();
       }
     } catch (err) {
@@ -250,7 +276,13 @@ export default function StudioPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      setCurrentJob((prev) => (prev ? { ...prev, outputs: [json.data, ...prev.outputs] } : prev));
+      setCurrentJobs((prev) =>
+        prev.map((job) =>
+          job.id === json.data.generationJobId
+            ? { ...job, outputs: [json.data, ...job.outputs] }
+            : job
+        )
+      );
     } catch (err) {
       console.error("Regen failed:", err);
     } finally {
@@ -259,21 +291,14 @@ export default function StudioPage() {
     }
   };
 
-  const leafOutputs = currentJob
-    ? (() => {
-        const parentIds = new Set(currentJob.outputs.map((o) => o.parentOutputId).filter(Boolean));
-        return currentJob.outputs.filter((o) => !parentIds.has(o.id));
-      })()
-    : [];
-
-  const isPolling = currentJob?.status === "queued" || currentJob?.status === "running";
-
-  // Bento size pattern (4-col grid, auto rows 160px)
-  const bentoClass = (i: number) => {
-    if (i % 7 === 0) return "col-span-2 row-span-2";
-    if (i % 7 === 4) return "row-span-2";
-    return "";
-  };
+  const allCurrentOutputs = currentJobs.flatMap((j) => j.outputs);
+  const leafOutputs = (() => {
+    const parentIds = new Set(allCurrentOutputs.map((o) => o.parentOutputId).filter(Boolean));
+    return allCurrentOutputs.filter((o) => !parentIds.has(o.id));
+  })();
+  const totalBatchSize = currentJobs.reduce((acc, j) => acc + j.batchSize, 0);
+  const isPolling = currentJobs.some((j) => j.status === "queued" || j.status === "running");
+  const allDone = currentJobs.length > 0 && currentJobs.every((j) => j.status === "completed");
 
   return (
     <div className="flex h-[calc(100vh-48px)] overflow-hidden">
@@ -352,15 +377,33 @@ export default function StudioPage() {
           </div>
         </div>
 
-        {/* Mode */}
-        <label className="flex flex-col gap-1 text-xs text-zinc-500">
-          Mode
-          <select className={SELECT_CLS} value={mode} onChange={(e) => setMode(e.target.value)}>
+        {/* Mode (multi-select) */}
+        <div className="flex flex-col gap-1 text-xs text-zinc-500">
+          <span>Mode <span className="text-zinc-700">({selectedModes.size} selected)</span></span>
+          <div className="grid grid-cols-2 gap-1">
             {MODES.map((m) => (
-              <option key={m.key} value={m.key}>{m.label}</option>
+              <button
+                key={m.key}
+                type="button"
+                onClick={() =>
+                  setSelectedModes((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(m.key) && next.size > 1) next.delete(m.key);
+                    else next.add(m.key);
+                    return next;
+                  })
+                }
+                className={`rounded px-2 py-1.5 text-left text-[11px] leading-tight transition-colors ${
+                  selectedModes.has(m.key)
+                    ? "bg-white font-semibold text-black"
+                    : "border border-[#27272a] bg-[#0a0a0a] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                }`}
+              >
+                {m.label}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
 
         {/* Ratio + Batch */}
         <div className="grid grid-cols-2 gap-2">
@@ -386,14 +429,31 @@ export default function StudioPage() {
         </div>
 
         {/* Lighting */}
-        <label className="flex flex-col gap-1 text-xs text-zinc-500">
+        <div className="flex flex-col gap-1 text-xs text-zinc-500">
           Lighting
-          <select className={SELECT_CLS} value={lighting} onChange={(e) => setLighting(e.target.value)}>
-            {LIGHTING_OPTS.map((l) => (
+          <select
+            className={SELECT_CLS}
+            value={LIGHTING_PRESETS.includes(lighting) ? lighting : "__custom__"}
+            onChange={(e) => {
+              if (e.target.value === "__custom__") setLighting("");
+              else setLighting(e.target.value);
+            }}
+          >
+            {LIGHTING_PRESETS.map((l) => (
               <option key={l} value={l}>{l}</option>
             ))}
+            <option value="__custom__">custom…</option>
           </select>
-        </label>
+          {!LIGHTING_PRESETS.includes(lighting) && (
+            <input
+              autoFocus
+              className={SELECT_CLS}
+              placeholder="describe custom lighting…"
+              value={lighting}
+              onChange={(e) => setLighting(e.target.value)}
+            />
+          )}
+        </div>
 
         {/* Prompt */}
         <label className="flex flex-col gap-1 text-xs text-zinc-500">
@@ -423,10 +483,10 @@ export default function StudioPage() {
         {/* Generate */}
         <button
           onClick={submitJob}
-          disabled={isSubmitting || !mode || (!brandId && !productId && !refImageFile)}
+          disabled={isSubmitting || selectedModes.size === 0 || (!brandId && !productId && !refImageFile)}
           className="mt-1 w-full rounded-md bg-white px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-25"
         >
-          {isSubmitting ? "Starting…" : "Generate"}
+          {isSubmitting ? "Starting…" : selectedModes.size > 1 ? `Generate (${selectedModes.size} modes)` : "Generate"}
         </button>
 
         {/* Status */}
@@ -435,13 +495,13 @@ export default function StudioPage() {
             className={`rounded-md border border-[#27272a] px-3 py-2 font-mono text-[10px] ${
               isPolling
                 ? "text-yellow-400"
-                : currentJob?.status === "failed"
+                : currentJobs.some((j) => j.status === "failed")
                 ? "text-red-400"
                 : "text-emerald-400"
             }`}
           >
             {isPolling
-              ? `⟳ ${currentJob?.status} · ${currentJob?.outputs?.length ?? 0}/${currentJob?.batchSize ?? batchSize}`
+              ? `⟳ running · ${allCurrentOutputs.length}/${totalBatchSize}`
               : jobStatus}
           </div>
         )}
@@ -453,13 +513,26 @@ export default function StudioPage() {
         <div className="flex shrink-0 items-center justify-between border-b border-[#27272a] px-6 py-3">
           <div>
             <h1 className="text-sm font-semibold text-zinc-100">Studio</h1>
-            <p className="text-[11px] text-zinc-600">
-              {currentJob
-                ? `Job ${currentJob.id.slice(-8)} · ${currentJob.status}`
-                : "Select controls and generate"}
+            <p className="text-[11px] text-zinc-600 flex items-center gap-1.5">
+              {currentJobs.length > 0 ? (
+                <>
+                  <span>
+                    {currentJobs.length} job{currentJobs.length !== 1 ? "s" : ""} ·{" "}
+                    <span className="capitalize">
+                      {isPolling ? "running" : allDone ? "complete" : "partial"}
+                    </span>
+                  </span>
+                  <span className="text-zinc-700">•</span>
+                  <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-zinc-300">
+                    Est. ₹{(totalBatchSize * 3.5).toFixed(2)} / ${(totalBatchSize * 0.04).toFixed(2)}
+                  </span>
+                </>
+              ) : (
+                "Select controls and generate"
+              )}
             </p>
           </div>
-          {currentJob?.status === "completed" && leafOutputs.length > 0 && (
+          {allDone && leafOutputs.length > 0 && (
             <div className="flex gap-2">
               <button
                 onClick={() =>
@@ -488,16 +561,16 @@ export default function StudioPage() {
         {/* Scroll area */}
         <div className="flex-1 overflow-y-auto p-5">
           {/* Current job outputs */}
-          {currentJob && (
+          {currentJobs.length > 0 && (
             <div className="mb-8">
               <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
                 {isPolling
-                  ? `Generating… (${currentJob.outputs?.length ?? 0}/${currentJob.batchSize})`
-                  : `Current Job · ${leafOutputs.length} output${leafOutputs.length !== 1 ? "s" : ""}`}
+                  ? `Generating… (${allCurrentOutputs.length}/${totalBatchSize})`
+                  : `Current Jobs · ${leafOutputs.length} output${leafOutputs.length !== 1 ? "s" : ""}`}
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {isPolling && leafOutputs.length === 0
-                  ? Array.from({ length: currentJob.batchSize }).map((_, i) => (
+                  ? Array.from({ length: totalBatchSize }).map((_, i) => (
                       <div
                         key={i}
                         className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-[#27272a] bg-[#09090b]"
@@ -668,17 +741,18 @@ export default function StudioPage() {
               <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
                 Approved Library
               </p>
-              <div className="grid auto-rows-[160px] grid-cols-4 gap-2">
+              <div className="columns-2 gap-2 sm:columns-3 md:columns-4 lg:columns-5 space-y-2">
                 {bentoItems.map((item, i) => (
                   <div
                     key={item.id}
-                    className={`group relative overflow-hidden rounded-lg bg-[#09090b] ${bentoClass(i)}`}
+                    className={`group relative break-inside-avoid overflow-hidden rounded-lg bg-[#09090b]`}
                   >
                     <Image
                       src={item.filePath}
                       alt={item.productName}
-                      fill
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      width={item.width || 1024}
+                      height={item.height || 1024}
+                      className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105"
                       unoptimized
                     />
                     <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/80 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
@@ -743,7 +817,7 @@ export default function StudioPage() {
           )}
 
           {/* Empty state */}
-          {!currentJob && bentoItems.length === 0 && (
+          {currentJobs.length === 0 && bentoItems.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <div className="grid grid-cols-3 gap-2 opacity-20">
                 {Array.from({ length: 9 }).map((_, i) => (
